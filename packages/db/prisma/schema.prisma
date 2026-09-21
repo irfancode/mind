@@ -1,0 +1,320 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AgeGroup {
+  UNDER_13
+  AGE_13_15
+  AGE_16_17
+  AGE_18_24
+  AGE_25_39
+  AGE_40_59
+  AGE_60_PLUS
+}
+
+enum ThoughtType {
+  THOUGHT
+  QUESTION
+  IDEA
+  MOMENT
+}
+
+enum FeedVibe {
+  CALM
+  CURIOUS
+  LOCAL
+  GLOBAL
+  PROFESSIONAL
+  CREATIVE
+  FAMILY_FRIENDLY
+}
+
+enum ReactionType {
+  APPRECIATE
+  USEFUL
+  INTERESTING
+  LEARNED_SOMETHING
+  RELATE
+  DISAGREE
+}
+
+enum ShareIntent {
+  AGREE
+  DISAGREE
+  USEFUL
+  INTERESTING
+  ASKING_QUESTION
+  ADDING_CONTEXT
+}
+
+enum ContentProvenance {
+  HUMAN_AUTHORED
+  AI_ASSISTED
+  AI_GENERATED
+  EDITED_FROM_AI
+  UNKNOWN
+}
+
+enum ContentClassification {
+  OPINION
+  PERSONAL_EXPERIENCE
+  CLAIM
+  EVIDENCE_BACKED
+  UNRESOLVED
+}
+
+enum ModerationLayer {
+  ILLEGAL
+  DANGEROUS_INTERACTION
+  MANIPULATION
+  MISINFORMATION_RISK
+  ORDINARY_DISAGREEMENT
+  CLEAN
+}
+
+enum ModerationAction {
+  BLOCK
+  QUARANTINE
+  REDUCE_AMPLIFICATION
+  ADD_CONTEXT
+  ALLOW
+  ESCALATE
+}
+
+enum ReportCategory {
+  SCAM
+  HARASSMENT
+  DOXXING
+  CHILD_SAFETY
+  INTIMATE_IMAGE_ABUSE
+  IMPERSONATION
+  MISINFORMATION
+  SPAM
+  VIOLENCE
+  SELF_HARM
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+  PENDING_VERIFICATION
+}
+
+enum Language {
+  en
+  zh
+  ms
+  ta
+}
+
+enum TrustSignal {
+  HUMAN_VERIFIED
+  ACCOUNT_ESTABLISHED
+  SOURCES_FREQUENTLY_PROVIDED
+  COMMUNITY_MEMBER
+  ORGANISATION_VERIFIED
+}
+
+enum UIMode {
+  STANDARD
+  CHILD
+  SENIOR
+  SIMPLE
+}
+
+enum EvidenceQuality {
+  STRONG
+  MODERATE
+  WEAK
+  CONFLICTING
+  UNKNOWN
+}
+
+model User {
+  id                 String          @id @default(cuid())
+  displayName        String
+  ageGroup           AgeGroup
+  preferredLanguages Language[]
+  feedVibe           FeedVibe        @default(CALM)
+  uiMode             UIMode          @default(STANDARD)
+  isHumanVerified    Boolean         @default(false)
+  humanPassportId    String?         @unique
+  trustSignals       TrustSignal[]
+  accountStatus      AccountStatus   @default(ACTIVE)
+  passkeyCredential  Json?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  thoughts           Thought[]
+  reactions          Reaction[]
+  shares             Share[]
+  following          Follow[]        @relation("following")
+  followers          Follow[]        @relation("followers")
+  reports            Report[]        @relation("reportsReported")
+  moderationActions  ModerationRecord[]
+  scamChecks         ScamFlag[]
+
+  @@index([accountStatus])
+  @@index([ageGroup])
+}
+
+model Thought {
+  id                 String               @id @default(cuid())
+  authorId           String
+  author             User                 @relation(fields: [authorId], references: [id])
+  type               ThoughtType
+  content            String
+  language           Language             @default(en)
+  provenance         ContentProvenance    @default(HUMAN_AUTHORED)
+  classification     ContentClassification @default(OPINION)
+  moderationLayer    ModerationLayer      @default(CLEAN)
+  moderationAction   ModerationAction     @default(ALLOW)
+  isAmplified        Boolean              @default(true)
+  contextId          String?
+  context            Context?
+  replyToId          String?
+  replyTo            Thought?             @relation("ThoughtReplies", fields: [replyToId], references: [id])
+  replies            Thought[]            @relation("ThoughtReplies")
+  reactions          Reaction[]
+  shares             Share[]
+  shareCount         Int                  @default(0)
+  viewCount          Int                  @default(0)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  reports            Report[]
+  moderationRecords  ModerationRecord[]
+
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([type])
+  @@index([moderationLayer])
+}
+
+model Reaction {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  thoughtId String
+  thought   Thought      @relation(fields: [thoughtId], references: [id])
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  @@unique([userId, thoughtId, type])
+  @@index([thoughtId])
+}
+
+model Share {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  thoughtId    String
+  thought      Thought     @relation(fields: [thoughtId], references: [id])
+  intent       ShareIntent
+  addedContext String?
+  createdAt    DateTime    @default(now())
+
+  @@index([thoughtId])
+  @@index([userId])
+}
+
+model Context {
+  id                 String          @id @default(cuid())
+  thoughtId          String          @unique
+  thought            Thought         @relation(fields: [thoughtId], references: [id])
+  summary            String
+  evidenceQuality    EvidenceQuality @default(UNKNOWN)
+  conflictingEvidence String[]
+  lastChecked        DateTime        @default(now())
+  createdAt          DateTime        @default(now())
+
+  sources            ContextSource[]
+}
+
+model ContextSource {
+  id               String   @id @default(cuid())
+  contextId        String
+  context          Context  @relation(fields: [contextId], references: [id])
+  url              String
+  title            String
+  publisher        String
+  publishedAt      DateTime?
+  reliabilityScore Float    @default(0.5)
+
+  @@index([contextId])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  follower    User     @relation("followers", fields: [followerId], references: [id])
+  followingId String
+  following   User     @relation("following", fields: [followingId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+model Report {
+  id          String         @id @default(cuid())
+  reporterId  String
+  reporter    User           @relation("reportsReported", fields: [reporterId], references: [id])
+  thoughtId   String?
+  thought     Thought?       @relation(fields: [thoughtId], references: [id])
+  userId      String?
+  category    ReportCategory
+  description String
+  status      ReportStatus   @default(PENDING)
+  resolvedAt  DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([status])
+  @@index([thoughtId])
+}
+
+model ModerationRecord {
+  id              String           @id @default(cuid())
+  thoughtId       String
+  thought         Thought          @relation(fields: [thoughtId], references: [id])
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  layer           ModerationLayer
+  action          ModerationAction
+  confidence      Float
+  reasons         String[]
+  requiresHumanReview Boolean      @default(false)
+  reviewedAt      DateTime?
+  createdAt       DateTime         @default(now())
+
+  @@index([thoughtId])
+  @@index([layer])
+}
+
+model ScamFlag {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        String
+  description String
+  severity    String
+  riskScore   Float
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
